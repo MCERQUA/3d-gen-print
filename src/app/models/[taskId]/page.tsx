@@ -144,16 +144,16 @@ export default function ModelDetailPage({
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* 3D Viewer */}
-        <div className="md:col-span-2">
+        <div className="md:col-span-2 min-w-0">
           {modelUrl ? (
-            <div className="rounded-lg overflow-hidden border">
+            <div className="rounded-lg overflow-hidden border w-full">
               <ModelViewer
                 modelUrl={modelUrl}
-                className="w-full h-[500px]"
+                className="w-full h-[300px] sm:h-[400px] md:h-[500px]"
               />
             </div>
           ) : (
-            <div className="w-full h-[500px] bg-muted rounded-lg flex items-center justify-center border">
+            <div className="w-full h-[300px] sm:h-[400px] md:h-[500px] bg-muted rounded-lg flex items-center justify-center border">
               {generation.thumbnailUrl ? (
                 <img
                   src={generation.thumbnailUrl}
