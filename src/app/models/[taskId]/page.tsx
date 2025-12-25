@@ -61,7 +61,31 @@ class ViewerErrorBoundary extends Component<ViewerErrorBoundaryProps, ViewerErro
 
 // Dynamic import to avoid SSR issues with Three.js
 const ModelViewer = dynamic(
-  () => import("@/components/model-viewer").then((mod) => mod.ModelViewer),
+  () => import("@/components/model-viewer")
+    .then((mod) => mod.ModelViewer)
+    .catch((err) => {
+      console.error("Failed to load ModelViewer:", err);
+      // Return a fallback component
+      return function FallbackViewer({ modelUrl, className }: { modelUrl: string; className?: string }) {
+        return (
+          <div className={`flex flex-col items-center justify-center bg-muted rounded-lg border p-4 ${className}`}>
+            <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
+            <p className="font-medium text-center">3D Viewer failed to load</p>
+            <p className="text-sm text-muted-foreground text-center mt-1">
+              Error: {err?.message || "Unknown error"}
+            </p>
+            <a
+              href={modelUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm"
+            >
+              Download Model
+            </a>
+          </div>
+        );
+      };
+    }),
   {
     ssr: false,
     loading: () => (
