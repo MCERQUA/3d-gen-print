@@ -20,6 +20,14 @@ interface ModelViewerProps {
   backgroundColor?: string;
 }
 
+// Proxy Meshy URLs to avoid CORS issues
+function getProxiedUrl(url: string): string {
+  if (url.startsWith("https://assets.meshy.ai/")) {
+    return `/api/proxy/model?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 function Loader() {
   const { progress } = useProgress();
   return (
@@ -103,7 +111,7 @@ export function ModelViewer({
           <Environment preset="studio" />
 
           {/* Model */}
-          <Model url={modelUrl} />
+          <Model url={getProxiedUrl(modelUrl)} />
 
           {/* Controls */}
           {showControls && (
