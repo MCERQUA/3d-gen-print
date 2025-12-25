@@ -1,13 +1,30 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { ArrowLeft, Download, Printer, Share2 } from "lucide-react";
+import { ArrowLeft, Download, Printer, Share2, RotateCw } from "lucide-react";
+
+// Dynamic import to avoid SSR issues with Three.js
+const ModelViewer = dynamic(
+  () => import("@/components/model-viewer").then((mod) => mod.ModelViewer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[500px] bg-muted animate-pulse rounded-lg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <span className="text-muted-foreground">Loading 3D viewer...</span>
+        </div>
+      </div>
+    ),
+  }
+);
 
 interface ModelUrls {
   glb?: string;
@@ -40,6 +57,7 @@ export default function ModelDetailPage({
   const { taskId } = use(params);
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(true);
 
   useEffect(() => {
     const fetchGeneration = async () => {
@@ -61,7 +79,6 @@ export default function ModelDetailPage({
 
   const handleDownload = async (format: keyof ModelUrls) => {
     if (!generation?.modelUrls?.[format]) return;
-
     const url = generation.modelUrls[format];
     window.open(url, "_blank");
   };
@@ -97,6 +114,8 @@ export default function ModelDetailPage({
     );
   }
 
+  const modelUrl = generation.modelUrls?.glb || generation.modelUrls?.fbx;
+
   return (
     <div className="container max-w-6xl mx-auto py-8 px-4">
       {/* Header */}
@@ -125,26 +144,47 @@ export default function ModelDetailPage({
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
-        {/* Preview - Thumbnail only for now */}
+        {/* 3D Viewer */}
         <div className="md:col-span-2">
-          <div className="w-full h-[500px] bg-muted rounded-lg flex items-center justify-center border">
-            {generation.thumbnailUrl ? (
-              <img
-                src={generation.thumbnailUrl}
-                alt={generation.prompt || "Model thumbnail"}
-                className="max-h-full max-w-full object-contain"
+          {modelUrl ? (
+            <div className="rounded-lg overflow-hidden border">
+              <ModelViewer
+                modelUrl={modelUrl}
+                className="w-full h-[500px]"
+                autoRotate={autoRotate}
               />
-            ) : (
-              <span className="text-muted-foreground">
-                {generation.status === "PENDING" || generation.status === "IN_PROGRESS"
-                  ? `Generating... ${generation.progress}%`
-                  : "No preview available"}
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground mt-2">
-            3D viewer temporarily disabled - use download buttons to view model
-          </p>
+            </div>
+          ) : (
+            <div className="w-full h-[500px] bg-muted rounded-lg flex items-center justify-center border">
+              {generation.thumbnailUrl ? (
+                <img
+                  src={generation.thumbnailUrl}
+                  alt={generation.prompt || "Model thumbnail"}
+                  className="max-h-full max-w-full object-contain"
+                />
+              ) : (
+                <span className="text-muted-foreground">
+                  {generation.status === "PENDING" || generation.status === "IN_PROGRESS"
+                    ? `Generating... ${generation.progress}%`
+                    : "No preview available"}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Viewer Controls */}
+          {modelUrl && (
+            <div className="mt-4 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAutoRotate(!autoRotate)}
+              >
+                <RotateCw className={`h-4 w-4 mr-2 ${autoRotate ? "animate-spin" : ""}`} />
+                {autoRotate ? "Stop Rotation" : "Auto Rotate"}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -209,7 +249,7 @@ export default function ModelDetailPage({
               <CardTitle className="text-lg">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button className="w-full" disabled={!generation.modelUrls}>
+              <Button className="w-full" disabled={!modelUrl}>
                 <Printer className="h-4 w-4 mr-2" />
                 Order 3D Print
               </Button>
