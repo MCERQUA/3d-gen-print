@@ -43,9 +43,16 @@ const PRINT_BED_PRESETS = {
   "custom": { name: "Custom", x: 200, y: 200, z: 200 },
 };
 
+interface ColorSlot {
+  name: string;
+  hex: string;
+}
+
 interface PrintPreparationCardProps {
   stats: ModelStats | null;
   meshyTaskId: string;
+  modelName?: string;
+  colorMapping?: { slots: ColorSlot[] } | null;
   onRemeshComplete?: (newTaskId: string) => void;
   onOpenColorMapper?: () => void;
 }
@@ -55,6 +62,8 @@ type RemeshStatus = "idle" | "starting" | "processing" | "completed" | "failed";
 export function PrintPreparationCard({
   stats,
   meshyTaskId,
+  modelName = "3DGenPrint_Model",
+  colorMapping,
   onRemeshComplete,
   onOpenColorMapper,
 }: PrintPreparationCardProps) {
@@ -69,6 +78,7 @@ export function PrintPreparationCard({
   const [scale, setScale] = useState(1.0);
   const [selectedBed, setSelectedBed] = useState<keyof typeof PRINT_BED_PRESETS>("bambu-p1s");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Calculate scaled dimensions
   const scaledDimensions = stats
@@ -146,6 +156,52 @@ export function PrintPreparationCard({
     } catch (error) {
       setRemeshStatus("failed");
       toast.error(error instanceof Error ? error.message : "Failed to start remesh");
+    }
+  };
+
+  // Export 3MF
+  const handleExport3MF = async () => {
+    if (!colorMapping?.slots) {
+      toast.error("Please configure colors first");
+      onOpenColorMapper?.();
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const response = await fetch("/api/export/3mf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelUrl: "", // We'll add this later when we have the model URL
+          colors: colorMapping.slots,
+          scale,
+          modelName,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Export failed");
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${modelName}.3mf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      toast.success("3MF file downloaded!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -368,10 +424,23 @@ export function PrintPreparationCard({
 
         {/* Export Options */}
         <div className="space-y-2">
-          <Button variant="outline" className="w-full justify-start" disabled>
-            <Download className="h-4 w-4 mr-2" />
+          <Button
+            variant="outline"
+            className="w-full justify-start"
+            onClick={handleExport3MF}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
             Export 3MF for Bambu
-            <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
+            {colorMapping?.slots && (
+              <Badge variant="secondary" className="ml-auto text-xs">
+                {colorMapping.slots.length} colors
+              </Badge>
+            )}
           </Button>
         </div>
       </CardContent>

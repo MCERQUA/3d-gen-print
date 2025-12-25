@@ -314,6 +314,8 @@ export default function ModelDetailPage({
             <PrintPreparationCard
               stats={modelStats}
               meshyTaskId={generation.meshyTaskId}
+              modelName={generation.prompt?.slice(0, 30) || "3DGenPrint_Model"}
+              colorMapping={colorMapping}
               onRemeshComplete={(newTaskId) => {
                 toast.success("Mesh repaired! Refreshing model...");
                 // Could refresh the page or update the model URL
