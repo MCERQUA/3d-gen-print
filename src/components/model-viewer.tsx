@@ -1,14 +1,14 @@
 "use client";
 
-import { Suspense, useRef, useState, useEffect } from "react";
+import { Suspense, useRef, useState, useEffect, Component, ReactNode } from "react";
 import { Canvas } from "@react-three/fiber";
 import {
   OrbitControls,
   Environment,
-  useGLTF,
   Center,
   Html,
 } from "@react-three/drei";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 
 interface ModelViewerProps {
@@ -17,6 +17,38 @@ interface ModelViewerProps {
   autoRotate?: boolean;
   showControls?: boolean;
   backgroundColor?: string;
+}
+
+// Error boundary to catch Three.js errors
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Model viewer error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
 }
 
 function Loader({ progress }: { progress: number }) {
@@ -33,18 +65,14 @@ function Loader({ progress }: { progress: number }) {
 }
 
 interface ModelProps {
-  blobUrl: string;
+  scene: THREE.Group;
 }
 
-function Model({ blobUrl }: ModelProps) {
-  const { scene } = useGLTF(blobUrl);
+function Model({ scene }: ModelProps) {
   const modelRef = useRef<THREE.Group>(null);
 
-  // Clone the scene to avoid issues with reusing
-  const clonedScene = scene.clone();
-
   // Center and scale the model
-  const box = new THREE.Box3().setFromObject(clonedScene);
+  const box = new THREE.Box3().setFromObject(scene);
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
   const scale = 2 / maxDim;
@@ -53,11 +81,25 @@ function Model({ blobUrl }: ModelProps) {
     <Center>
       <primitive
         ref={modelRef}
-        object={clonedScene}
+        object={scene}
         scale={scale}
         dispose={null}
       />
     </Center>
+  );
+}
+
+function ErrorDisplay({ message, className }: { message: string; className?: string }) {
+  return (
+    <div className={`flex items-center justify-center bg-muted ${className}`}>
+      <div className="text-center text-destructive p-4">
+        <p className="font-medium">Failed to load 3D model</p>
+        <p className="text-sm text-muted-foreground mt-1">{message}</p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Try refreshing the page
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -69,76 +111,86 @@ export function ModelViewer({
   backgroundColor = "#1a1a1a",
 }: ModelViewerProps) {
   const [error, setError] = useState<string | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [scene, setScene] = useState<THREE.Group | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
 
-  // Fetch model through proxy and create blob URL
+  // Fetch model through proxy and load with GLTFLoader
   useEffect(() => {
-    let objectUrl: string | null = null;
+    let mounted = true;
 
-    async function fetchModel() {
+    async function fetchAndLoadModel() {
       try {
         setLoadProgress(10);
+        setError(null);
 
         // Build proxy URL
         const proxyUrl = `/api/proxy/model?url=${encodeURIComponent(modelUrl)}`;
-        console.log("Fetching model through proxy:", proxyUrl.substring(0, 80));
+        console.log("Fetching model through proxy...");
 
         setLoadProgress(20);
 
         const response = await fetch(proxyUrl);
 
         if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Failed to fetch model: ${response.status} - ${errorText}`);
+          let errorMessage = `HTTP ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorMessage;
+          } catch {
+            // Response wasn't JSON
+          }
+          throw new Error(errorMessage);
+        }
+
+        setLoadProgress(40);
+
+        const arrayBuffer = await response.arrayBuffer();
+        console.log("Model fetched, size:", arrayBuffer.byteLength, "bytes");
+
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error("Empty model file received");
         }
 
         setLoadProgress(60);
 
-        const blob = await response.blob();
-        console.log("Model blob size:", blob.size, "bytes");
+        // Load with GLTFLoader
+        const loader = new GLTFLoader();
 
-        setLoadProgress(80);
+        const gltf = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
+          loader.parse(
+            arrayBuffer,
+            "",
+            (result) => resolve(result),
+            (err) => reject(err)
+          );
+        });
 
-        // Create object URL from blob
-        objectUrl = URL.createObjectURL(blob);
-        console.log("Created blob URL:", objectUrl);
-
+        console.log("Model parsed successfully");
         setLoadProgress(100);
-        setBlobUrl(objectUrl);
+
+        if (mounted) {
+          setScene(gltf.scene);
+        }
       } catch (err) {
-        console.error("Model fetch error:", err);
-        setError(err instanceof Error ? err.message : "Failed to load model");
+        console.error("Model load error:", err);
+        if (mounted) {
+          setError(err instanceof Error ? err.message : "Failed to load model");
+        }
       }
     }
 
-    fetchModel();
+    fetchAndLoadModel();
 
-    // Cleanup
     return () => {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      mounted = false;
     };
   }, [modelUrl]);
 
   if (error) {
-    return (
-      <div
-        className={`flex items-center justify-center bg-muted ${className}`}
-      >
-        <div className="text-center text-destructive p-4">
-          <p className="font-medium">Failed to load model</p>
-          <p className="text-sm text-muted-foreground mt-1">{error}</p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Try refreshing the page
-          </p>
-        </div>
-      </div>
-    );
+    return <ErrorDisplay message={error} className={className} />;
   }
 
-  if (!blobUrl) {
+  if (!scene) {
     return (
       <div className={`flex items-center justify-center bg-muted ${className}`}>
         <div className="flex flex-col items-center gap-2">
@@ -152,44 +204,45 @@ export function ModelViewer({
   }
 
   return (
-    <div className={`relative ${className}`}>
-      <Canvas
-        camera={{ position: [0, 0, 5], fov: 50 }}
-        style={{ background: backgroundColor }}
-        gl={{ preserveDrawingBuffer: true }}
-        onError={() => setError("WebGL error occurred")}
-      >
-        <Suspense fallback={<Loader progress={100} />}>
-          {/* Lighting */}
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[10, 10, 5]} intensity={1} />
-          <directionalLight position={[-10, -10, -5]} intensity={0.5} />
+    <ErrorBoundary fallback={<ErrorDisplay message="WebGL rendering error" className={className} />}>
+      <div className={`relative ${className}`}>
+        <Canvas
+          camera={{ position: [0, 0, 5], fov: 50 }}
+          style={{ background: backgroundColor }}
+          gl={{ preserveDrawingBuffer: true }}
+        >
+          <Suspense fallback={<Loader progress={100} />}>
+            {/* Lighting */}
+            <ambientLight intensity={0.5} />
+            <directionalLight position={[10, 10, 5]} intensity={1} />
+            <directionalLight position={[-10, -10, -5]} intensity={0.5} />
 
-          {/* Environment for reflections */}
-          <Environment preset="studio" />
+            {/* Environment for reflections */}
+            <Environment preset="studio" />
 
-          {/* Model */}
-          <Model blobUrl={blobUrl} />
+            {/* Model */}
+            <Model scene={scene} />
 
-          {/* Controls */}
-          {showControls && (
-            <OrbitControls
-              autoRotate={autoRotate}
-              autoRotateSpeed={2}
-              enablePan={true}
-              enableZoom={true}
-              enableRotate={true}
-              minDistance={1}
-              maxDistance={20}
-            />
-          )}
-        </Suspense>
-      </Canvas>
+            {/* Controls */}
+            {showControls && (
+              <OrbitControls
+                autoRotate={autoRotate}
+                autoRotateSpeed={2}
+                enablePan={true}
+                enableZoom={true}
+                enableRotate={true}
+                minDistance={1}
+                maxDistance={20}
+              />
+            )}
+          </Suspense>
+        </Canvas>
 
-      {/* Controls overlay */}
-      <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-black/50 px-2 py-1 rounded">
-        Drag to rotate | Scroll to zoom | Right-click to pan
+        {/* Controls overlay */}
+        <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-black/50 px-2 py-1 rounded">
+          Drag to rotate | Scroll to zoom | Right-click to pan
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }
