@@ -253,12 +253,20 @@ function Loader({ progress }: { progress: number }) {
   );
 }
 
-function ErrorDisplay({ message, className }: { message: string; className?: string }) {
+function ErrorDisplay({ message, className, onRetry }: { message: string; className?: string; onRetry?: () => void }) {
   return (
     <div className={`flex items-center justify-center bg-muted ${className}`}>
       <div className="text-center text-destructive p-4">
         <p className="font-medium">Failed to load 3D model</p>
         <p className="text-sm text-muted-foreground mt-1">{message}</p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="mt-3 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        )}
       </div>
     </div>
   );
@@ -490,6 +498,24 @@ function ViewToolbar({
   );
 }
 
+// Check WebGL support
+function checkWebGLSupport(): { supported: boolean; error?: string } {
+  if (typeof window === "undefined") {
+    return { supported: true }; // SSR, assume supported
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    if (!gl) {
+      return { supported: false, error: "WebGL is not supported on this device" };
+    }
+    return { supported: true };
+  } catch (e) {
+    return { supported: false, error: "WebGL check failed" };
+  }
+}
+
 // Main ModelViewer Component
 export function ModelViewer({
   modelUrl,
@@ -500,6 +526,16 @@ export function ModelViewer({
   onStatsChange,
 }: ModelViewerProps) {
   const [error, setError] = useState<string | null>(null);
+  const [webglSupported, setWebglSupported] = useState(true);
+
+  // Check WebGL on mount
+  useEffect(() => {
+    const check = checkWebGLSupport();
+    if (!check.supported) {
+      setError(check.error || "WebGL not supported");
+      setWebglSupported(false);
+    }
+  }, []);
   const [scene, setScene] = useState<THREE.Group | null>(null);
   const [stats, setStats] = useState<ModelStats | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -507,6 +543,7 @@ export function ModelViewer({
   const [showAxes, setShowAxes] = useState(false);
   const [autoRotate, setAutoRotate] = useState(initialAutoRotate);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -517,21 +554,26 @@ export function ModelViewer({
         setError(null);
 
         const proxyUrl = `/api/proxy/model?url=${encodeURIComponent(modelUrl)}`;
-        console.log("Fetching model through proxy...");
+        console.log("Fetching model through proxy:", proxyUrl);
 
         setLoadProgress(20);
 
         const response = await fetch(proxyUrl, {
           credentials: "include", // Ensure cookies are sent for auth
+          cache: "no-store", // Prevent caching issues
         });
+
+        console.log("Proxy response status:", response.status);
 
         if (!response.ok) {
           let errorMessage = `HTTP ${response.status}`;
           try {
             const errorData = await response.json();
+            console.log("Error response:", errorData);
             errorMessage = errorData.message || errorMessage;
           } catch {
             // Response wasn't JSON
+            console.log("Error response was not JSON");
           }
           // Add helpful context for common errors
           if (response.status === 401) {
@@ -588,13 +630,18 @@ export function ModelViewer({
     return () => {
       mounted = false;
     };
-  }, [modelUrl, onStatsChange]);
+  }, [modelUrl, onStatsChange, retryCount]);
+
+  const handleRetry = () => {
+    setRetryCount((c) => c + 1);
+  };
 
   if (error) {
-    return <ErrorDisplay message={error} className={className} />;
+    return <ErrorDisplay message={error} className={className} onRetry={handleRetry} />;
   }
 
-  if (!scene) {
+  // Show loading state only if WebGL is supported and no error
+  if (!scene && webglSupported && !error) {
     return (
       <div className={`flex items-center justify-center bg-muted ${className}`}>
         <div className="flex flex-col items-center gap-2">
@@ -605,6 +652,11 @@ export function ModelViewer({
         </div>
       </div>
     );
+  }
+
+  // If WebGL not supported or scene failed to load, show fallback
+  if (!webglSupported || !scene) {
+    return <ErrorDisplay message={error || "Unable to load 3D viewer"} className={className} onRetry={handleRetry} />;
   }
 
   return (
