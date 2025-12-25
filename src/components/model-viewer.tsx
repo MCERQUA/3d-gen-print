@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useRef, useState, useEffect, Component, ReactNode, useMemo } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Suspense, useState, useEffect, Component, ReactNode, useMemo } from "react";
+import { Canvas } from "@react-three/fiber";
 import {
   OrbitControls,
   Environment,
@@ -12,6 +12,7 @@ import {
 } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
+import { X, ChevronRight, Box, Grid3X3, Eye, Axis3D, RotateCcw, Info } from "lucide-react";
 
 // Types
 interface ModelViewerProps {
@@ -96,14 +97,11 @@ function calculateModelStats(scene: THREE.Group, fileSize: number): ModelStats {
         vertices += geometry.attributes.position.count;
       }
 
-      // Calculate volume using signed volume of triangles
-      // This works for watertight meshes
       const pos = geometry.attributes.position;
       const index = geometry.index;
 
       if (pos && index) {
         let meshVolume = 0;
-        const vertex = new THREE.Vector3();
         const v0 = new THREE.Vector3();
         const v1 = new THREE.Vector3();
         const v2 = new THREE.Vector3();
@@ -113,10 +111,8 @@ function calculateModelStats(scene: THREE.Group, fileSize: number): ModelStats {
           v1.fromBufferAttribute(pos, index.getX(i + 1));
           v2.fromBufferAttribute(pos, index.getX(i + 2));
 
-          // Signed volume of tetrahedron
           meshVolume += v0.dot(v1.cross(v2)) / 6;
 
-          // Surface area of triangle
           const edge1 = new THREE.Vector3().subVectors(v1, v0);
           const edge2 = new THREE.Vector3().subVectors(v2, v0);
           totalSurfaceArea += edge1.cross(edge2).length() / 2;
@@ -125,7 +121,6 @@ function calculateModelStats(scene: THREE.Group, fileSize: number): ModelStats {
         totalVolume += Math.abs(meshVolume);
       }
 
-      // Check for non-manifold edges (simple watertight check)
       if (geometry.index) {
         const edges = new Map<string, number>();
         const idx = geometry.index.array;
@@ -136,7 +131,6 @@ function calculateModelStats(scene: THREE.Group, fileSize: number): ModelStats {
             edges.set(key, (edges.get(key) || 0) + 1);
           });
         }
-        // Each edge should appear exactly twice in a watertight mesh
         for (const count of edges.values()) {
           if (count !== 2) {
             isWatertight = false;
@@ -146,11 +140,6 @@ function calculateModelStats(scene: THREE.Group, fileSize: number): ModelStats {
       }
     }
   });
-
-  // Apply scale to get real-world dimensions
-  const worldMatrix = scene.matrixWorld;
-  const scale = new THREE.Vector3();
-  worldMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
 
   return {
     triangles: Math.round(triangles),
@@ -182,7 +171,6 @@ function Model({ scene, viewMode, showAxes }: ModelProps) {
 
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        // Clone material to avoid modifying original
         if (Array.isArray(child.material)) {
           child.material = child.material.map(m => m.clone());
         } else {
@@ -199,7 +187,6 @@ function Model({ scene, viewMode, showAxes }: ModelProps) {
               material.opacity = 1;
               break;
             case "solid-wireframe":
-              // Will add wireframe overlay separately
               material.wireframe = false;
               break;
             case "xray":
@@ -220,7 +207,6 @@ function Model({ scene, viewMode, showAxes }: ModelProps) {
     return clone;
   }, [scene, viewMode]);
 
-  // Create wireframe overlay for solid-wireframe mode
   const wireframeOverlay = useMemo(() => {
     if (viewMode !== "solid-wireframe") return null;
 
@@ -238,7 +224,6 @@ function Model({ scene, viewMode, showAxes }: ModelProps) {
     return overlay;
   }, [scene, viewMode]);
 
-  // Center and scale
   const box = new THREE.Box3().setFromObject(scene);
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
@@ -279,8 +264,16 @@ function ErrorDisplay({ message, className }: { message: string; className?: str
   );
 }
 
-// Stats Panel Component
-function StatsPanel({ stats, className }: { stats: ModelStats; className?: string }) {
+// Stats Drawer Component (Mobile-friendly slide-out)
+function StatsDrawer({
+  stats,
+  isOpen,
+  onClose
+}: {
+  stats: ModelStats;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -290,64 +283,141 @@ function StatsPanel({ stats, className }: { stats: ModelStats; className?: strin
   const formatNumber = (n: number) => n.toLocaleString();
 
   return (
-    <div className={`bg-black/80 text-white text-xs p-3 rounded-lg space-y-2 ${className}`}>
-      <div className="font-semibold text-sm border-b border-white/20 pb-1 mb-2">
-        Model Statistics
-      </div>
+    <>
+      {/* Backdrop */}
+      {isOpen && (
+        <div
+          className="absolute inset-0 bg-black/30 z-10"
+          onClick={onClose}
+        />
+      )}
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-        <span className="text-white/60">Triangles:</span>
-        <span className="font-mono">{formatNumber(stats.triangles)}</span>
+      {/* Drawer */}
+      <div
+        className={`absolute top-0 right-0 h-full w-72 max-w-[85vw] bg-gray-900 text-white z-20 transform transition-transform duration-300 ease-in-out ${
+          isOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <Info className="h-5 w-5" />
+            Model Stats
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-        <span className="text-white/60">Vertices:</span>
-        <span className="font-mono">{formatNumber(stats.vertices)}</span>
-
-        <span className="text-white/60">Meshes:</span>
-        <span className="font-mono">{stats.meshCount}</span>
-
-        <span className="text-white/60">File Size:</span>
-        <span className="font-mono">{formatSize(stats.fileSize)}</span>
-      </div>
-
-      <div className="border-t border-white/20 pt-2 mt-2">
-        <div className="font-semibold text-sm mb-1">Dimensions</div>
-        <div className="grid grid-cols-3 gap-2 text-center">
+        {/* Content */}
+        <div className="p-4 space-y-6 overflow-y-auto h-[calc(100%-60px)]">
+          {/* Mesh Info */}
           <div>
-            <div className="text-white/60">X</div>
-            <div className="font-mono">{stats.dimensions.x.toFixed(2)}</div>
+            <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
+              Mesh Information
+            </h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                <span className="text-white/70">Triangles</span>
+                <span className="font-mono font-semibold">{formatNumber(stats.triangles)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                <span className="text-white/70">Vertices</span>
+                <span className="font-mono font-semibold">{formatNumber(stats.vertices)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                <span className="text-white/70">Meshes</span>
+                <span className="font-mono font-semibold">{stats.meshCount}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                <span className="text-white/70">File Size</span>
+                <span className="font-mono font-semibold">{formatSize(stats.fileSize)}</span>
+              </div>
+            </div>
           </div>
+
+          {/* Dimensions */}
           <div>
-            <div className="text-white/60">Y</div>
-            <div className="font-mono">{stats.dimensions.y.toFixed(2)}</div>
+            <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
+              Dimensions
+            </h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <div className="text-xs text-white/50 mb-1">Width (X)</div>
+                <div className="font-mono font-bold text-lg">{stats.dimensions.x.toFixed(1)}</div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <div className="text-xs text-white/50 mb-1">Height (Y)</div>
+                <div className="font-mono font-bold text-lg">{stats.dimensions.y.toFixed(1)}</div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <div className="text-xs text-white/50 mb-1">Depth (Z)</div>
+                <div className="font-mono font-bold text-lg">{stats.dimensions.z.toFixed(1)}</div>
+              </div>
+            </div>
           </div>
+
+          {/* Print Analysis */}
           <div>
-            <div className="text-white/60">Z</div>
-            <div className="font-mono">{stats.dimensions.z.toFixed(2)}</div>
+            <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
+              Print Analysis
+            </h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                <span className="text-white/70">Volume</span>
+                <span className="font-mono font-semibold">{stats.volume.toFixed(2)} units³</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-white/10">
+                <span className="text-white/70">Surface Area</span>
+                <span className="font-mono font-semibold">{stats.surfaceArea.toFixed(2)} units²</span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-white/70">Watertight</span>
+                <span className={`font-semibold px-3 py-1 rounded-full text-sm ${
+                  stats.isWatertight
+                    ? "bg-green-500/20 text-green-400"
+                    : "bg-red-500/20 text-red-400"
+                }`}>
+                  {stats.isWatertight ? "Yes - Ready to Print" : "No - Needs Repair"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Box */}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+            <p className="text-xs text-blue-300">
+              <strong>Tip:</strong> A watertight mesh is required for 3D printing.
+              All edges must connect exactly 2 faces with no holes or gaps.
+            </p>
           </div>
         </div>
       </div>
-
-      <div className="border-t border-white/20 pt-2 mt-2">
-        <div className="font-semibold text-sm mb-1">Print Analysis</div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          <span className="text-white/60">Volume:</span>
-          <span className="font-mono">{stats.volume.toFixed(2)} units³</span>
-
-          <span className="text-white/60">Surface:</span>
-          <span className="font-mono">{stats.surfaceArea.toFixed(2)} units²</span>
-
-          <span className="text-white/60">Watertight:</span>
-          <span className={stats.isWatertight ? "text-green-400" : "text-red-400"}>
-            {stats.isWatertight ? "Yes ✓" : "No ✗"}
-          </span>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }
 
-// View Mode Controls
-function ViewModeControls({
+// Floating Stats Tab (collapsed state)
+function StatsTab({ onClick, stats }: { onClick: () => void; stats: ModelStats }) {
+  return (
+    <button
+      onClick={onClick}
+      className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-gray-900 text-white px-2 py-4 rounded-l-lg shadow-lg hover:bg-gray-800 transition-colors flex flex-col items-center gap-2"
+    >
+      <ChevronRight className="h-4 w-4 rotate-180" />
+      <span className="text-xs font-semibold writing-mode-vertical" style={{ writingMode: 'vertical-rl' }}>
+        STATS
+      </span>
+      <div className={`w-2 h-2 rounded-full ${stats.isWatertight ? 'bg-green-400' : 'bg-red-400'}`} />
+    </button>
+  );
+}
+
+// Mobile-friendly toolbar
+function ViewToolbar({
   viewMode,
   onViewModeChange,
   showAxes,
@@ -362,52 +432,60 @@ function ViewModeControls({
   autoRotate: boolean;
   onAutoRotateChange: (rotate: boolean) => void;
 }) {
-  const modes: { value: ViewMode; label: string }[] = [
-    { value: "solid", label: "Solid" },
-    { value: "wireframe", label: "Wire" },
-    { value: "solid-wireframe", label: "Both" },
-    { value: "xray", label: "X-Ray" },
+  const modes: { value: ViewMode; icon: ReactNode; label: string }[] = [
+    { value: "solid", icon: <Box className="h-4 w-4" />, label: "Solid" },
+    { value: "wireframe", icon: <Grid3X3 className="h-4 w-4" />, label: "Wire" },
+    { value: "solid-wireframe", icon: <Box className="h-4 w-4" />, label: "Both" },
+    { value: "xray", icon: <Eye className="h-4 w-4" />, label: "X-Ray" },
   ];
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <div className="flex rounded-lg overflow-hidden border border-white/20">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+      <div className="flex items-center gap-1 bg-gray-900/90 backdrop-blur-sm rounded-full p-1 shadow-lg">
+        {/* View modes */}
         {modes.map((mode) => (
           <button
             key={mode.value}
             onClick={() => onViewModeChange(mode.value)}
-            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`p-2.5 rounded-full transition-colors ${
               viewMode === mode.value
                 ? "bg-primary text-primary-foreground"
-                : "bg-black/60 text-white/80 hover:bg-black/80"
+                : "text-white/70 hover:text-white hover:bg-white/10"
             }`}
+            title={mode.label}
           >
-            {mode.label}
+            {mode.icon}
           </button>
         ))}
+
+        <div className="w-px h-6 bg-white/20 mx-1" />
+
+        {/* Axes toggle */}
+        <button
+          onClick={() => onShowAxesChange(!showAxes)}
+          className={`p-2.5 rounded-full transition-colors ${
+            showAxes
+              ? "bg-primary text-primary-foreground"
+              : "text-white/70 hover:text-white hover:bg-white/10"
+          }`}
+          title="Show Axes"
+        >
+          <Axis3D className="h-4 w-4" />
+        </button>
+
+        {/* Auto-rotate toggle */}
+        <button
+          onClick={() => onAutoRotateChange(!autoRotate)}
+          className={`p-2.5 rounded-full transition-colors ${
+            autoRotate
+              ? "bg-primary text-primary-foreground"
+              : "text-white/70 hover:text-white hover:bg-white/10"
+          }`}
+          title={autoRotate ? "Stop Rotation" : "Auto Rotate"}
+        >
+          <RotateCcw className={`h-4 w-4 ${autoRotate ? "animate-spin" : ""}`} />
+        </button>
       </div>
-
-      <button
-        onClick={() => onShowAxesChange(!showAxes)}
-        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-          showAxes
-            ? "bg-primary text-primary-foreground border-primary"
-            : "bg-black/60 text-white/80 border-white/20 hover:bg-black/80"
-        }`}
-      >
-        Axes
-      </button>
-
-      <button
-        onClick={() => onAutoRotateChange(!autoRotate)}
-        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-          autoRotate
-            ? "bg-primary text-primary-foreground border-primary"
-            : "bg-black/60 text-white/80 border-white/20 hover:bg-black/80"
-        }`}
-      >
-        {autoRotate ? "Stop" : "Rotate"}
-      </button>
     </div>
   );
 }
@@ -428,7 +506,7 @@ export function ModelViewer({
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [showAxes, setShowAxes] = useState(false);
   const [autoRotate, setAutoRotate] = useState(initialAutoRotate);
-  const [showStats, setShowStats] = useState(true);
+  const [statsOpen, setStatsOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -481,7 +559,6 @@ export function ModelViewer({
         console.log("Model parsed successfully");
         setLoadProgress(80);
 
-        // Calculate stats
         const modelStats = calculateModelStats(gltf.scene, fileSize);
         console.log("Model stats:", modelStats);
 
@@ -526,7 +603,7 @@ export function ModelViewer({
 
   return (
     <ErrorBoundary fallback={<ErrorDisplay message="WebGL rendering error" className={className} />}>
-      <div className={`relative ${className}`}>
+      <div className={`relative overflow-hidden ${className}`}>
         <Canvas
           camera={{ position: [0, 0, 5], fov: 50 }}
           style={{ background: backgroundColor }}
@@ -553,43 +630,44 @@ export function ModelViewer({
               />
             )}
 
-            <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
+            <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
               <GizmoViewport labelColor="white" axisHeadScale={1} />
             </GizmoHelper>
           </Suspense>
         </Canvas>
 
-        {/* Controls overlay - top */}
-        <div className="absolute top-2 left-2 right-2 flex justify-between items-start">
-          <ViewModeControls
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            showAxes={showAxes}
-            onShowAxesChange={setShowAxes}
-            autoRotate={autoRotate}
-            onAutoRotateChange={setAutoRotate}
-          />
+        {/* Floating toolbar at bottom */}
+        <ViewToolbar
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          showAxes={showAxes}
+          onShowAxesChange={setShowAxes}
+          autoRotate={autoRotate}
+          onAutoRotateChange={setAutoRotate}
+        />
 
-          <button
-            onClick={() => setShowStats(!showStats)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-              showStats
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-black/60 text-white/80 border-white/20 hover:bg-black/80"
-            }`}
-          >
-            Stats
-          </button>
-        </div>
-
-        {/* Stats panel */}
-        {showStats && stats && (
-          <StatsPanel stats={stats} className="absolute top-14 right-2 w-48" />
+        {/* Stats tab (always visible on right edge) */}
+        {stats && !statsOpen && (
+          <StatsTab onClick={() => setStatsOpen(true)} stats={stats} />
         )}
 
-        {/* Help text */}
-        <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-black/50 px-2 py-1 rounded">
-          Drag to rotate | Scroll to zoom | Right-click to pan
+        {/* Stats drawer */}
+        {stats && (
+          <StatsDrawer
+            stats={stats}
+            isOpen={statsOpen}
+            onClose={() => setStatsOpen(false)}
+          />
+        )}
+
+        {/* Touch hint for mobile */}
+        <div className="absolute top-2 left-2 text-xs text-white/50 bg-black/30 px-2 py-1 rounded pointer-events-none md:hidden">
+          Pinch to zoom • Drag to rotate
+        </div>
+
+        {/* Desktop hint */}
+        <div className="absolute top-2 left-2 text-xs text-white/50 bg-black/30 px-2 py-1 rounded pointer-events-none hidden md:block">
+          Scroll to zoom • Drag to rotate • Right-click to pan
         </div>
       </div>
     </ErrorBoundary>
