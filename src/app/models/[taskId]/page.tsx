@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, Component, ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,56 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { ArrowLeft, Download, Printer, Share2 } from "lucide-react";
+import { ArrowLeft, Download, Printer, Share2, AlertTriangle } from "lucide-react";
+
+// Error boundary for 3D viewer
+interface ViewerErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+  thumbnailUrl?: string | null;
+}
+
+interface ViewerErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ViewerErrorBoundary extends Component<ViewerErrorBoundaryProps, ViewerErrorBoundaryState> {
+  constructor(props: ViewerErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ViewerErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("3D Viewer crashed:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="w-full h-[300px] sm:h-[400px] md:h-[500px] bg-muted rounded-lg flex flex-col items-center justify-center border p-4">
+          <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
+          <p className="font-medium text-center">3D Viewer unavailable</p>
+          <p className="text-sm text-muted-foreground text-center mt-1">
+            Your device may not support WebGL
+          </p>
+          {this.props.thumbnailUrl && (
+            <img
+              src={this.props.thumbnailUrl}
+              alt="Model preview"
+              className="mt-4 max-h-32 rounded-lg object-contain"
+            />
+          )}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Dynamic import to avoid SSR issues with Three.js
 const ModelViewer = dynamic(
@@ -16,7 +65,7 @@ const ModelViewer = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[500px] bg-muted animate-pulse rounded-lg flex items-center justify-center">
+      <div className="w-full h-[300px] sm:h-[400px] md:h-[500px] bg-muted animate-pulse rounded-lg flex items-center justify-center">
         <div className="flex flex-col items-center gap-2">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           <span className="text-muted-foreground">Loading 3D viewer...</span>
@@ -146,12 +195,14 @@ export default function ModelDetailPage({
         {/* 3D Viewer */}
         <div className="md:col-span-2 min-w-0">
           {modelUrl ? (
-            <div className="rounded-lg overflow-hidden border w-full">
-              <ModelViewer
-                modelUrl={modelUrl}
-                className="w-full h-[300px] sm:h-[400px] md:h-[500px]"
-              />
-            </div>
+            <ViewerErrorBoundary thumbnailUrl={generation.thumbnailUrl}>
+              <div className="rounded-lg overflow-hidden border w-full">
+                <ModelViewer
+                  modelUrl={modelUrl}
+                  className="w-full h-[300px] sm:h-[400px] md:h-[500px]"
+                />
+              </div>
+            </ViewerErrorBoundary>
           ) : (
             <div className="w-full h-[300px] sm:h-[400px] md:h-[500px] bg-muted rounded-lg flex items-center justify-center border">
               {generation.thumbnailUrl ? (
