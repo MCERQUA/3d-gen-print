@@ -253,12 +253,15 @@ function Loader({ progress }: { progress: number }) {
   );
 }
 
-function ErrorDisplay({ message, className, onRetry }: { message: string; className?: string; onRetry?: () => void }) {
+function ErrorDisplay({ message, className, onRetry, debug }: { message: string; className?: string; onRetry?: () => void; debug?: string }) {
   return (
     <div className={`flex items-center justify-center bg-muted ${className}`}>
-      <div className="text-center text-destructive p-4">
+      <div className="text-center text-destructive p-4 max-w-full overflow-hidden">
         <p className="font-medium">Failed to load 3D model</p>
-        <p className="text-sm text-muted-foreground mt-1">{message}</p>
+        <p className="text-sm text-muted-foreground mt-1 break-words">{message}</p>
+        {debug && (
+          <p className="text-xs text-muted-foreground mt-2 font-mono break-all">{debug}</p>
+        )}
         {onRetry && (
           <button
             onClick={onRetry}
@@ -527,13 +530,20 @@ export function ModelViewer({
 }: ModelViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [webglSupported, setWebglSupported] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<string>("");
 
   // Check WebGL on mount
   useEffect(() => {
-    const check = checkWebGLSupport();
-    if (!check.supported) {
-      setError(check.error || "WebGL not supported");
-      setWebglSupported(false);
+    try {
+      const check = checkWebGLSupport();
+      if (!check.supported) {
+        setError(check.error || "WebGL not supported");
+        setWebglSupported(false);
+      }
+      setDebugInfo(`WebGL: ${check.supported ? 'OK' : 'NO'}`);
+    } catch (e) {
+      console.error("WebGL check error:", e);
+      setError("Failed to check WebGL support");
     }
   }, []);
   const [scene, setScene] = useState<THREE.Group | null>(null);
@@ -620,12 +630,19 @@ export function ModelViewer({
       } catch (err) {
         console.error("Model load error:", err);
         if (mounted) {
-          setError(err instanceof Error ? err.message : "Failed to load model");
+          const errorMsg = err instanceof Error ? err.message : "Failed to load model";
+          setError(errorMsg);
+          setDebugInfo((prev) => `${prev} | Error: ${errorMsg}`);
         }
       }
     }
 
-    fetchAndLoadModel();
+    try {
+      fetchAndLoadModel();
+    } catch (err) {
+      console.error("Critical error:", err);
+      setError("Critical error loading model");
+    }
 
     return () => {
       mounted = false;
@@ -637,7 +654,7 @@ export function ModelViewer({
   };
 
   if (error) {
-    return <ErrorDisplay message={error} className={className} onRetry={handleRetry} />;
+    return <ErrorDisplay message={error} className={className} onRetry={handleRetry} debug={debugInfo} />;
   }
 
   // Show loading state only if WebGL is supported and no error
@@ -659,10 +676,12 @@ export function ModelViewer({
     return <ErrorDisplay message={error || "Unable to load 3D viewer"} className={className} onRetry={handleRetry} />;
   }
 
-  return (
-    <ErrorBoundary fallback={<ErrorDisplay message="WebGL rendering error" className={className} />}>
-      <div className={`relative overflow-hidden ${className}`}>
-        <Canvas
+  // Wrap everything in try-catch for safety
+  try {
+    return (
+      <ErrorBoundary fallback={<ErrorDisplay message="WebGL rendering error" className={className} debug={debugInfo} />}>
+        <div className={`relative overflow-hidden ${className}`}>
+          <Canvas
           camera={{ position: [0, 0, 5], fov: 50 }}
           style={{ background: backgroundColor }}
           gl={{ preserveDrawingBuffer: true }}
@@ -729,5 +748,9 @@ export function ModelViewer({
         </div>
       </div>
     </ErrorBoundary>
-  );
+    );
+  } catch (renderError) {
+    console.error("Render error:", renderError);
+    return <ErrorDisplay message="Failed to render 3D viewer" className={className} debug={String(renderError)} />;
+  }
 }
