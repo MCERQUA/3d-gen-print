@@ -101,12 +101,21 @@ export function PrintPreparationCard({
   useEffect(() => {
     if (!remeshTaskId || remeshStatus !== "processing") return;
 
+    console.log("Starting to poll for remesh task:", remeshTaskId);
+
     const pollInterval = setInterval(async () => {
       try {
+        console.log("Polling remesh status...");
         const response = await fetch(`/api/generate/remesh/${remeshTaskId}`);
-        if (!response.ok) throw new Error("Failed to check status");
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Poll response error:", response.status, errorData);
+          throw new Error(errorData.message || "Failed to check status");
+        }
 
         const data = await response.json();
+        console.log("Remesh status:", data.status, "progress:", data.progress);
         setRemeshProgress(data.progress || 0);
 
         if (data.status === "SUCCEEDED") {
@@ -116,13 +125,18 @@ export function PrintPreparationCard({
           clearInterval(pollInterval);
         } else if (data.status === "FAILED") {
           setRemeshStatus("failed");
-          toast.error("Mesh repair failed");
+          toast.error(data.task_error?.message || "Mesh repair failed");
+          clearInterval(pollInterval);
+        } else if (data.status === "CANCELED" || data.status === "EXPIRED") {
+          setRemeshStatus("failed");
+          toast.error(`Mesh repair ${data.status.toLowerCase()}`);
           clearInterval(pollInterval);
         }
       } catch (error) {
         console.error("Poll error:", error);
+        // Don't fail immediately - keep trying for a bit
       }
-    }, 2000);
+    }, 3000); // Poll every 3 seconds
 
     return () => clearInterval(pollInterval);
   }, [remeshTaskId, remeshStatus, onRemeshComplete]);
@@ -149,10 +163,12 @@ export function PrintPreparationCard({
       }
 
       const data = await response.json();
-      setRemeshTaskId(data.meshyTaskId);
+      const newTaskId = data.taskId || data.meshyTaskId;
+      console.log("Remesh started, task ID:", newTaskId);
+      setRemeshTaskId(newTaskId);
       setRemeshStatus("processing");
       setRemeshProgress(0);
-      toast.info("Mesh repair started (7 credits)");
+      toast.info(`Mesh repair started (${GENERATION_CREDITS.REMESH} credits)`);
     } catch (error) {
       setRemeshStatus("failed");
       toast.error(error instanceof Error ? error.message : "Failed to start remesh");
