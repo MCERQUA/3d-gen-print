@@ -10,18 +10,24 @@ import {
   SignedOut,
   UserButton,
 } from "@clerk/nextjs";
-import { Menu, X, Home, Sparkles, Image, LayoutDashboard, ShoppingBag, CreditCard } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { CreditsDisplay } from "@/components/credits-display";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/generate", label: "Generate", icon: Sparkles },
-  { href: "/gallery", label: "Gallery", icon: Image },
-  { href: "/orders", label: "Orders", icon: ShoppingBag },
-  { href: "/credits", label: "Credits", icon: CreditCard },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/generate", label: "Generate" },
+  { href: "/gallery", label: "Gallery" },
+  { href: "/orders", label: "Orders" },
+  { href: "/credits", label: "Credits" },
 ];
 
 export function Navbar() {
@@ -32,8 +38,7 @@ export function Navbar() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/" className="font-bold text-xl flex items-center gap-2">
-            <span className="text-2xl">🎨</span>
+          <Link href="/" className="font-bold text-xl">
             3D Gen Print
           </Link>
 
@@ -45,13 +50,12 @@ export function Navbar() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    "px-3 py-2 rounded-md text-sm font-medium transition-colors",
                     pathname === item.href || pathname.startsWith(item.href + "/")
                       ? "bg-primary/10 text-primary"
                       : "hover:bg-muted text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
                   {item.label}
                 </Link>
               ))}
@@ -86,21 +90,22 @@ export function Navbar() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="w-[280px] sm:w-[350px]">
-                <SheetTitle className="text-left">Navigation</SheetTitle>
-                <nav className="flex flex-col gap-2 mt-6">
+                <SheetHeader>
+                  <SheetTitle>Navigation</SheetTitle>
+                </SheetHeader>
+                <nav className="flex flex-col gap-2 mt-4">
                   {navItems.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
                       onClick={() => setOpen(false)}
                       className={cn(
-                        "flex items-center gap-3 px-4 py-3 rounded-lg text-base font-medium transition-colors",
+                        "px-4 py-3 rounded-lg text-base font-medium transition-colors",
                         pathname === item.href || pathname.startsWith(item.href + "/")
                           ? "bg-primary/10 text-primary"
                           : "hover:bg-muted text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      <item.icon className="h-5 w-5" />
                       {item.label}
                     </Link>
                   ))}
