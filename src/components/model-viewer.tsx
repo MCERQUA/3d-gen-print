@@ -521,7 +521,9 @@ export function ModelViewer({
 
         setLoadProgress(20);
 
-        const response = await fetch(proxyUrl);
+        const response = await fetch(proxyUrl, {
+          credentials: "include", // Ensure cookies are sent for auth
+        });
 
         if (!response.ok) {
           let errorMessage = `HTTP ${response.status}`;
@@ -530,6 +532,10 @@ export function ModelViewer({
             errorMessage = errorData.message || errorMessage;
           } catch {
             // Response wasn't JSON
+          }
+          // Add helpful context for common errors
+          if (response.status === 401) {
+            errorMessage = "Please sign in to view 3D models";
           }
           throw new Error(errorMessage);
         }
