@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { ArrowLeft, Download, Printer, Share2, AlertTriangle } from "lucide-react";
 import { PrintPreparationCard } from "@/components/print-preparation-card";
+import { PrintColorMapper, type ColorMapping } from "@/components/print-color-mapper";
 import type { ModelStats } from "@/components/model-viewer";
 
 // Error boundary for 3D viewer
@@ -134,6 +135,7 @@ export default function ModelDetailPage({
   const [loading, setLoading] = useState(true);
   const [modelStats, setModelStats] = useState<ModelStats | null>(null);
   const [colorMapperOpen, setColorMapperOpen] = useState(false);
+  const [colorMapping, setColorMapping] = useState<ColorMapping | null>(null);
 
   useEffect(() => {
     const fetchGeneration = async () => {
@@ -365,6 +367,17 @@ export default function ModelDetailPage({
           </Card>
         </div>
       </div>
+
+      {/* Color Mapper Dialog */}
+      <PrintColorMapper
+        open={colorMapperOpen}
+        onOpenChange={setColorMapperOpen}
+        initialMapping={colorMapping || undefined}
+        onSave={(mapping) => {
+          setColorMapping(mapping);
+          toast.success("Color mapping saved");
+        }}
+      />
     </div>
   );
 }
