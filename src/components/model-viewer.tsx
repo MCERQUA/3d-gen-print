@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useRef, useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -22,8 +22,12 @@ interface ModelViewerProps {
 
 // Proxy Meshy URLs to avoid CORS issues
 function getProxiedUrl(url: string): string {
-  if (url.startsWith("https://assets.meshy.ai/")) {
-    return `/api/proxy/model?url=${encodeURIComponent(url)}`;
+  // Always proxy URLs that contain meshy.ai
+  if (url.includes("meshy.ai")) {
+    const proxyUrl = `/api/proxy/model?url=${encodeURIComponent(url)}`;
+    console.log("Proxying model URL:", url.substring(0, 50) + "...");
+    console.log("Proxied URL:", proxyUrl.substring(0, 80) + "...");
+    return proxyUrl;
   }
   return url;
 }
@@ -44,10 +48,16 @@ function Loader() {
 
 interface ModelProps {
   url: string;
+  onError?: (error: Error) => void;
 }
 
-function Model({ url }: ModelProps) {
-  const { scene } = useGLTF(url);
+function Model({ url, onError }: ModelProps) {
+  const { scene } = useGLTF(url, true, true, (loader) => {
+    loader.manager.onError = (errorUrl: string) => {
+      console.error("Failed to load:", errorUrl);
+      onError?.(new Error(`Failed to load model from: ${errorUrl}`));
+    };
+  });
   const modelRef = useRef<THREE.Group>(null);
 
   // Clone the scene to avoid issues with reusing
@@ -71,6 +81,17 @@ function Model({ url }: ModelProps) {
   );
 }
 
+function ErrorFallback({ message }: { message: string }) {
+  return (
+    <Html center>
+      <div className="text-center p-4 bg-destructive/10 rounded-lg max-w-xs">
+        <p className="text-destructive font-medium">Failed to load model</p>
+        <p className="text-sm text-muted-foreground mt-1">{message}</p>
+      </div>
+    </Html>
+  );
+}
+
 export function ModelViewer({
   modelUrl,
   className = "",
@@ -79,16 +100,34 @@ export function ModelViewer({
   backgroundColor = "#1a1a1a",
 }: ModelViewerProps) {
   const [error, setError] = useState<string | null>(null);
+  const [proxiedUrl, setProxiedUrl] = useState<string | null>(null);
+
+  // Apply proxy on client side only
+  useEffect(() => {
+    const url = getProxiedUrl(modelUrl);
+    setProxiedUrl(url);
+  }, [modelUrl]);
 
   if (error) {
     return (
       <div
         className={`flex items-center justify-center bg-muted ${className}`}
       >
-        <div className="text-center text-destructive">
-          <p>Failed to load model</p>
-          <p className="text-sm text-muted-foreground">{error}</p>
+        <div className="text-center text-destructive p-4">
+          <p className="font-medium">Failed to load model</p>
+          <p className="text-sm text-muted-foreground mt-1">{error}</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Try refreshing the page
+          </p>
         </div>
+      </div>
+    );
+  }
+
+  if (!proxiedUrl) {
+    return (
+      <div className={`flex items-center justify-center bg-muted ${className}`}>
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
@@ -111,7 +150,10 @@ export function ModelViewer({
           <Environment preset="studio" />
 
           {/* Model */}
-          <Model url={getProxiedUrl(modelUrl)} />
+          <Model
+            url={proxiedUrl}
+            onError={(err) => setError(err.message)}
+          />
 
           {/* Controls */}
           {showControls && (
@@ -138,5 +180,5 @@ export function ModelViewer({
 
 // Preload models for better performance
 export function preloadModel(url: string) {
-  useGLTF.preload(url);
+  useGLTF.preload(getProxiedUrl(url));
 }
