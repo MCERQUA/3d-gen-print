@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { ArrowLeft, Download, Printer, Share2, AlertTriangle } from "lucide-react";
+import { PrintPreparationCard } from "@/components/print-preparation-card";
+import type { ModelStats } from "@/components/model-viewer";
 
 // Error boundary for 3D viewer
 interface ViewerErrorBoundaryProps {
@@ -130,6 +132,8 @@ export default function ModelDetailPage({
   const { taskId } = use(params);
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modelStats, setModelStats] = useState<ModelStats | null>(null);
+  const [colorMapperOpen, setColorMapperOpen] = useState(false);
 
   useEffect(() => {
     const fetchGeneration = async () => {
@@ -224,6 +228,7 @@ export default function ModelDetailPage({
                 <ModelViewer
                   modelUrl={modelUrl}
                   className="w-full h-[300px] sm:h-[400px] md:h-[500px]"
+                  onStatsChange={setModelStats}
                 />
               </div>
             </ViewerErrorBoundary>
@@ -301,6 +306,19 @@ export default function ModelDetailPage({
               )}
             </CardContent>
           </Card>
+
+          {/* Print Preparation */}
+          {generation.status === "SUCCEEDED" && (
+            <PrintPreparationCard
+              stats={modelStats}
+              meshyTaskId={generation.meshyTaskId}
+              onRemeshComplete={(newTaskId) => {
+                toast.success("Mesh repaired! Refreshing model...");
+                // Could refresh the page or update the model URL
+              }}
+              onOpenColorMapper={() => setColorMapperOpen(true)}
+            />
+          )}
 
           {/* Actions */}
           <Card>

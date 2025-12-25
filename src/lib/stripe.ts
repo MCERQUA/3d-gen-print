@@ -1,10 +1,28 @@
 import Stripe from "stripe";
 
-// Server-side Stripe client
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-12-15.clover",
-  typescript: true,
-});
+// Server-side Stripe client - lazy initialized to avoid build errors
+let _stripe: Stripe | null = null;
+
+export function getStripe(): Stripe {
+  if (!_stripe) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error("STRIPE_SECRET_KEY is not set");
+    }
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      typescript: true,
+    });
+  }
+  return _stripe;
+}
+
+// For backwards compatibility
+export const stripe = {
+  get checkout() { return getStripe().checkout; },
+  get customers() { return getStripe().customers; },
+  get paymentIntents() { return getStripe().paymentIntents; },
+  get subscriptions() { return getStripe().subscriptions; },
+  get webhooks() { return getStripe().webhooks; },
+};
 
 // Credit packages configuration
 export const CREDIT_PACKAGES = [
