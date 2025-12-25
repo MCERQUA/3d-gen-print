@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { ArrowLeft, Download, Printer, Share2, RotateCw } from "lucide-react";
+import { ArrowLeft, Download, Printer, Share2 } from "lucide-react";
 
 // Dynamic import to avoid SSR issues with Three.js
 const ModelViewer = dynamic(
@@ -57,7 +57,6 @@ export default function ModelDetailPage({
   const { taskId } = use(params);
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [autoRotate, setAutoRotate] = useState(true);
 
   useEffect(() => {
     const fetchGeneration = async () => {
@@ -151,7 +150,6 @@ export default function ModelDetailPage({
               <ModelViewer
                 modelUrl={modelUrl}
                 className="w-full h-[500px]"
-                autoRotate={autoRotate}
               />
             </div>
           ) : (
@@ -169,20 +167,6 @@ export default function ModelDetailPage({
                     : "No preview available"}
                 </span>
               )}
-            </div>
-          )}
-
-          {/* Viewer Controls */}
-          {modelUrl && (
-            <div className="mt-4 flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAutoRotate(!autoRotate)}
-              >
-                <RotateCw className={`h-4 w-4 mr-2 ${autoRotate ? "animate-spin" : ""}`} />
-                {autoRotate ? "Stop Rotation" : "Auto Rotate"}
-              </Button>
             </div>
           )}
         </div>
