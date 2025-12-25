@@ -1,0 +1,261 @@
+// Prisma schema for 3D-GEN-PRINT
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// USER & AUTHENTICATION (Synced from Clerk)
+// ============================================
+
+model User {
+  id            String   @id // Clerk user ID
+  email         String   @unique
+  firstName     String?
+  lastName      String?
+  imageUrl      String?
+  credits       Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions  Transaction[]
+  generations   Generation[]
+  orders        PrintOrder[]
+}
+
+// ============================================
+// CREDIT SYSTEM
+// ============================================
+
+model Transaction {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            TransactionType
+  amount          Int             // Credits (positive = add, negative = spend)
+  description     String
+  stripePaymentId String?
+  meshyTaskId     String?         // If credits spent on generation
+  createdAt       DateTime        @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+enum TransactionType {
+  PURCHASE      // Bought credits
+  GENERATION    // Spent on 3D generation
+  REFUND        // Refunded credits
+  BONUS         // Free credits (signup, promo)
+}
+
+model CreditPackage {
+  id              String   @id @default(cuid())
+  userId          String
+  packageId       String   // starter, standard, pro, enterprise
+  credits         Int
+  amountPaid      Int      // In cents
+  stripeSessionId String   @unique
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ============================================
+// 3D GENERATION
+// ============================================
+
+model Generation {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Meshy Task Info
+  meshyTaskId     String           @unique
+  meshyTaskType   GenerationType
+  status          GenerationStatus @default(PENDING)
+  progress        Int              @default(0)
+
+  // Input
+  prompt          String?
+  imageUrl        String?          // For image-to-3d
+  imageUrls       String[]         // For multi-image-to-3d
+
+  // Settings
+  aiModel         String           @default("latest")
+  artStyle        String?
+  topology        String           @default("triangle")
+  targetPolycount Int              @default(30000)
+  enablePbr       Boolean          @default(false)
+
+  // Output (stored as JSON)
+  modelUrls       Json?            // { glb, fbx, usdz, obj, stl }
+  textureUrls     Json?            // { base_color, metallic, normal, roughness }
+  thumbnailUrl    String?
+
+  // Local Storage (VPS)
+  localModelPath  String?
+  localThumbPath  String?
+
+  // Costs
+  creditsUsed     Int              @default(0)
+
+  // Timestamps
+  createdAt       DateTime         @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  expiresAt       DateTime?        // Meshy deletes after 3 days
+
+  // Relations
+  refinedFrom     Generation?      @relation("RefineRelation", fields: [refinedFromId], references: [id])
+  refinedFromId   String?
+  refinements     Generation[]     @relation("RefineRelation")
+  rigging         Rigging?
+  orders          PrintOrder[]
+
+  @@index([userId])
+  @@index([meshyTaskId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum GenerationType {
+  TEXT_TO_3D_PREVIEW
+  TEXT_TO_3D_REFINE
+  IMAGE_TO_3D
+  MULTI_IMAGE_TO_3D
+  REMESH
+  RETEXTURE
+}
+
+enum GenerationStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
+// ============================================
+// RIGGING & ANIMATION
+// ============================================
+
+model Rigging {
+  id            String           @id @default(cuid())
+  generationId  String           @unique
+  generation    Generation       @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  meshyTaskId   String           @unique
+  status        GenerationStatus @default(PENDING)
+
+  heightMeters  Float            @default(1.7)
+  modelUrl      String?
+
+  animations    Animation[]
+
+  createdAt     DateTime         @default(now())
+  finishedAt    DateTime?
+}
+
+model Animation {
+  id            String           @id @default(cuid())
+  riggingId     String
+  rigging       Rigging          @relation(fields: [riggingId], references: [id], onDelete: Cascade)
+
+  meshyTaskId   String           @unique
+  status        GenerationStatus @default(PENDING)
+
+  actionId      Int              // From Meshy animation library
+  actionName    String
+  modelUrl      String?
+
+  createdAt     DateTime         @default(now())
+  finishedAt    DateTime?
+
+  @@index([riggingId])
+}
+
+// ============================================
+// PRINT ORDERS
+// ============================================
+
+model PrintOrder {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generationId    String
+  generation      Generation    @relation(fields: [generationId], references: [id])
+
+  // Order Details
+  status          OrderStatus   @default(PENDING_PAYMENT)
+
+  // Print Settings
+  material        PrintMaterial
+  size            PrintSize
+  color           String?
+  quantity        Int           @default(1)
+
+  // Pricing (in cents USD)
+  basePrice       Int
+  materialUpcharge Int          @default(0)
+  sizeMultiplier  Float         @default(1.0)
+  subtotal        Int
+  tax             Int           @default(0)
+  shipping        Int           @default(0)
+  total           Int
+
+  // Stripe
+  stripePaymentIntentId String?
+  stripePaymentStatus   String?
+
+  // Shipping
+  shippingName    String?
+  shippingAddress Json?         // { line1, line2, city, state, postal, country }
+  trackingNumber  String?
+
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  paidAt          DateTime?
+  printedAt       DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@index([orderNumber])
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  PRINTING
+  QUALITY_CHECK
+  SHIPPING
+  DELIVERED
+  CANCELED
+  REFUNDED
+}
+
+enum PrintMaterial {
+  PLA           // Standard, cheapest
+  PETG          // Durable
+  ABS           // Heat resistant
+  RESIN         // High detail
+  RESIN_TOUGH   // Durable resin
+}
+
+enum PrintSize {
+  SMALL         // ~5cm
+  MEDIUM        // ~10cm
+  LARGE         // ~15cm
+  XL            // ~20cm
+  CUSTOM        // User specified
+}
